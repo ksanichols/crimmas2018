@@ -3,115 +3,145 @@
 import itertools
 import os
 import stat
+import random
+import sys
+import time
 
 RED   = "\033[1;31m"
 GREEN = "\033[1;32m"
 DEFAULT_COLOR = "\033[00m"
 
-def COZY(args):
-    return 'print("So cozy")'
+def make_colorizer(c):
+    def colorizer(word):
+        return "{}{}{}".format(c, word, DEFAULT_COLOR)
+    return colorizer
 
-def PRINT(args):
-    return 'print("{}{}{}")'.format(GREEN, args, DEFAULT_COLOR)
+red   = make_colorizer(RED)
+green = make_colorizer(GREEN)
 
-OPERATORS = {
-    "COZY" : COZY,
-    "PRINT" : PRINT
-}
+crimmas_colorizers = [ red, green ]
+
+def random_color(word):
+    return random.choice(crimmas_colorizers)(word)
+
+def get_pretty_printer(line):
+    return """
+for word in {}:
+    color = random.choice(crimmas_colorizers)
+    for _ in range(5):
+        sys.stdout.write(color(random_case(word)))
+        sys.stdout.flush()
+        sys.stdout.write("\\r")
+        time.sleep(0.1)
+""".format(line)
+
+GOOD_WORDS = [
+    "HOME",
+    "COZY",
+    "BOOP",
+    ":3",
+    ":>",
+    "'V'",
+    ".^.",
+    "<:",
+    "'W'",
+    "HUG",
+    "MERRY",
+    "CHRISTMAS"
+]
+
+def parse(line, original_line, linum, verbose=False):
+    errors   = []
+
+    cozy_count = 0
+    for word in line:
+        if word.upper() == "COZY":
+            cozy_count += 1
+        if not word.upper() in GOOD_WORDS:
+            if verbose:
+                errors.append("Unexpected token recieved: {}\n".format(word)
+                              + "Did you mean {}?".format(random.choice(GOOD_WORDS)))
+            else:
+                errors.append("Unexpected token recieved: {}".format(word))
+
+    if cozy_count < 3:
+        if verbose:
+            errors.append("The following line is insufficiently cozy:\n"
+                          + "{}: {}\n".format(linum, original_line)
+                          + "^^^".rjust(len(original_line)))
+        else:
+            errors.append("Coziness deduction failure on line {}.".format(linum))
+
+    return errors, cozy_count
 
 def tokenize(lines):
     return [(line.upper().split(), line, number + 1) \
             for line, number in zip(lines, range(len(lines)))]
 
-def cozy_level_check(line, oline, linum, verbose):
-    if len(line) < 2:
-        if verbose:
-            return ["Syntax error: line too short\n" + \
-                    "{}: {}\n".format(linum, oline) +  \
-                    "".ljust(len(oline)) + "^^^"]
-        else:
-            return ["Line {} is BAD.".format(linum)]
-    else:
-        return []
-
-PREPARSE_ERRORS = [
-    cozy_level_check
-]
-
-def operator_is_good(parsed_line, oline, linum, verbose):
-    operator = parsed_line["operator"]
-    if operator not in OPERATORS:
-        if verbose:
-            return ["Unexpected operator: {}\n".format(operator)]
-        else:
-            return ["Line {} is BAD.".format(linum)]
-    else:
-        return []
-
-POSTPARSE_ERRORS = [
-    operator_is_good
-]
-
-
-def get_action(parsed_line):
-    operator = OPERATORS[parsed_line["operator"]]
-    return [operator(parsed_line["args"])]
-
-def parse(line, original_line, linum, verbose=False):
-    errors   = []
-    warnings = []
-    parsed_line = None
-
-    for error_checker in PREPARSE_ERRORS:
-        errors += error_checker(line, original_line, linum, verbose)
-
-    if len(errors) == 0:
-        operator   = line[0]
-        args       = line[1:]
-        parsed_line = {"operator": operator, "args" : args}
-
-        for error_checker in POSTPARSE_ERRORS:
-            errors += error_checker(parsed_line, original_line, linum, verbose)
-    else:
-        pass
-
-    return errors, parsed_line
-
-def cozycompile(verbose, f):
+def cozycompile(verbose, f, f_name):
     '''Returns a structure of the following format:
     {
-        errors   : [string],
-        actions  : [void(void)]
+        errors   : [string]
     }
     '''
     tokens = tokenize(f)
 
     errors       = []
     parsed_lines = []
+    actions      = []
+
+    total_num_cozies = 0
 
     for line, original_line, linum in tokens:
-        e, parsed_line = parse(line, original_line, linum, verbose)
+        e, num_cozies = parse(line, original_line, linum, verbose)
         errors += e
-        parsed_lines.append(parsed_line)
+        total_num_cozies += num_cozies
+        if len(e) == 0:
+            actions.append(get_pretty_printer(line))
 
-    actions = []
+    COZY_COEFFICIENT = 195239.43
+    if total_num_cozies * COZY_COEFFICIENT < 1000000:
+        errors.append("{} is insufficiently cozy!!! Cozy level {} < 1000000".format(f_name,
+            total_num_cozies * COZY_COEFFICIENT))
 
-    for parsed_line in parsed_lines:
-        actions += get_action(parsed_line)
-
-    return {"errors" : errors, "actions" : actions}
-
-def cozylink(actions, outfile):
-    outfile.write("#!/usr/bin/env python\n")
-    for action in actions:
-        outfile.write("{}{}".format(action, "\n"))
+    return {"errors" : errors,
+            "num_cozies" : num_cozies,
+            "f_name" : f_name,
+            "actions" : actions}
 
 def read_files(files):
     in_memory_files = []
     for f in files:
         open_file = open(f)
-        in_memory_files.append([line.rstrip('\n') for line in open_file])
+        in_memory_files.append(([line.rstrip('\n') for line in open_file], f))
     return in_memory_files
+
+def write_program(outfile, all_actions):
+    boiler_plate = """#!/usr/bin/env python
+import random
+import sys
+import time
+
+RED   = "\033[1;31m"
+GREEN = "\033[1;32m"
+DEFAULT_COLOR = "\033[00m"
+
+def make_colorizer(c):
+    def colorizer(word):
+        return "{}{}{}".format(c, word, DEFAULT_COLOR)
+    return colorizer
+
+red   = make_colorizer(RED)
+green = make_colorizer(GREEN)
+
+crimmas_colorizers = [ red, green ]
+
+def random_case(word):
+    return "".join([random.choice([l.upper(), l.lower()]) for l in word])
+"""
+    outfile.write(boiler_plate)
+    for action in all_actions:
+        outfile.write(action)
 
 def main():
     import argparse
@@ -123,7 +153,7 @@ def main():
 
     files = read_files(args.files)
 
-    results = [cozycompile(args.v, f) for f in files]
+    results = [cozycompile(args.v, f, name) for f, name in files]
 
     has_errors = False
 
@@ -131,14 +161,17 @@ def main():
 
     for result in results:
         errors = result["errors"]
-        for error in errors:
+        if len(errors) > 0:
             has_errors = True
-            print("{}{}{}".format(RED, error, DEFAULT_COLOR))
-        all_actions += result["actions"]
+            print(result["f_name"])
+            for error in errors:
+                print("{}{}{}".format(RED, error, DEFAULT_COLOR))
+        else:
+            all_actions += (result["actions"])
 
     if not has_errors:
         outfile = open(args.o, 'w')
-        cozylink(all_actions, outfile)
+        write_program(outfile, all_actions)
         outfile.close()
  
         st = os.stat(args.o)
