@@ -147,7 +147,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description='Cozy Compiler v.1.0.1.')
     parser.add_argument('-v', action='store_true')
-    parser.add_argument('-o', nargs='?', help="out.", default='cozy.out')
+    parser.add_argument('-o', nargs='?', help="out.", default='cozy.exe')
     parser.add_argument('files', metavar='F', nargs='+', help='files.')
     args = parser.parse_args()
 
